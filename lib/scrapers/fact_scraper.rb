@@ -3,15 +3,27 @@
 module Scrapers
   # scrapes match statistics
   class FactScraper < BaseScraper
-    def initialize(match:)
+    def initialize(match:, force: false)
+      super()
       @match = match
       @url = scraper_url
-      @page = scrape_page_from_url
+      @force = force
+      @try_counter = 0
     end
 
     def scrape
-      if write_match_facts
+      if @match.stats_complete && !@force
+        puts "Dont need stats for #{@match.name}"
+        return
+      end
+      @page = scrape_page_from_url
+      if write_match_stats
         puts "Stats saved for #{@match.name}"
+      elsif @try_counter < 5
+        @try_counter += 1
+        puts "Trying again in 5 seconds..."
+        sleep(5)
+        self.scrape
       else
         puts "Skipped Match: #{@match.name}"
       end
@@ -31,8 +43,9 @@ module Scrapers
          clearances yellow_cards red_cards fouls_committed]
     end
 
-    def write_match_facts
-      return nil if stats.empty? || @match.stats_complete
+    def write_match_stats
+      return nil if @try_counter >=5
+      return nil if stats.empty?
       return nil unless write_stats
       @match.stats_complete = true if @match.status == 'completed'
       @match.save
@@ -44,14 +57,35 @@ module Scrapers
       home_stats = MatchStatistic.find_or_create_by(home_attrs)
       away_stats = MatchStatistic.find_or_create_by(away_attrs)
       all_stats.each do |stat|
+        write_home_stat(home_stats, stat)
+        write_away_stat(away_stats, stat)
+      end
+      success = home_stats.save && away_stats.save
+      return true if success
+      puts "#{home_stats.errors.full_messages}"
+      puts "#{away_stats.errors.full_messages}"
+      false
+    end
+
+    def write_home_stat(home_stats, stat)
+      if home_stats.send(stat) == home_team_stat(stat)
+        puts "home #{stat} is the same"
+      else
         home_stats.update_attribute(stat, home_team_stat(stat))
+      end
+    end
+
+    def write_away_stat(away_stats, stat)
+      if away_stats.send(stat) == away_team_stat(stat)
+        puts "away #{stat} is the same"
+      else
         away_stats.update_attribute(stat, away_team_stat(stat))
       end
-      home_stats.save && away_stats.save
     end
 
     def stats
-      @stats ||= @page.search('.fi-stats')
+      return @stats unless @stats.blank?
+      @stats = @page.search('.fi-stats')
     end
 
     def parse_stats(tr_num, splitter)

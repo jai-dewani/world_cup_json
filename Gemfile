@@ -13,23 +13,33 @@ gem 'sass-rails', '~> 5.0.0'
 gem 'uglifier', '>= 1.3.0'
 
 gem 'airbrake'
-gem 'chromedriver-helper'
+gem 'chronic'
 gem 'clockwork'
+gem 'connection_pool'
 gem 'foundation-rails', '~> 5'
+gem 'httparty'
 gem 'haml-rails'
-gem 'newrelic_rpm'
 gem 'oj'
+gem 'platform-api'
 gem 'puma'
+gem 'puma_worker_killer'
 gem 'rabl'
 gem 'rack-attack'
 gem 'rack-cors', require: 'rack/cors'
 gem 'rails_autoscale_agent'
 gem 'redis-rails'
+gem 'scout_apm'
 gem 'responders', '~> 2.0'
 gem 'watir'
 
 group :production do
   gem 'rails_12factor'
+end
+
+group :development do
+  gem 'derailed_benchmarks'
+  gem 'stackprof'
+  gem 'chromedriver-helper'
 end
 
 group :development, :test do

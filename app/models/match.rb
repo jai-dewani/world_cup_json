@@ -1,5 +1,6 @@
 class Match < ActiveRecord::Base
-  validates_presence_of :home_team, :away_team, :datetime, :status
+  validates_presence_of :location, :venue, :datetime, :status
+  validate :has_teams
 
   belongs_to :home_team, class_name: Team, foreign_key: 'home_team_id'
   belongs_to :away_team, class_name: Team, foreign_key: 'away_team_id'
@@ -9,26 +10,38 @@ class Match < ActiveRecord::Base
   has_many :match_statistics
 
   before_save :determine_winner
+  before_save :set_default_status
   after_save :update_teams
 
-  def self.by_date(start_time, end_time = nil)
-    start_time = Time.parse(start_time) unless start_time.is_a? Time
-    if end_time
-      end_time = Time.parse(end_time) unless start_time.is_a? Time
-    else
-      end_time = start_time
-    end
-    start_filter = start_time.beginning_of_day
-    end_filter = end_time.end_of_day
-    where(datetime: start_filter..end_filter).order(:datetime)
+  def self.for_date(start_time, end_time = nil)
+    parse_times(start_time, end_time)
+    return Match.none unless @start_time && @end_time
+    where(datetime: @start_time..@end_time)
+  end
+
+  def self.parse_times(start_time, end_time)
+    start_time = Chronic.parse(start_time.to_s)
+    end_time = Chronic.parse(end_time.to_s)
+    end_time ||= start_time
+    return unless start_time && end_time
+    @start_time = start_time.beginning_of_day
+    @end_time = end_time.end_of_day
+  end
+
+  def self.next
+    today.future.reorder(datetime: :asc).first
+  end
+
+  def self.recently_completed
+    today.completed.reorder(datetime: :desc).first
   end
 
   def self.today
-    by_date(Time.now)
+    for_date(Time.now)
   end
 
   def self.tomorrow
-    by_date(Time.now.advance(days: 1))
+    for_date(Time.now.advance(days: 1))
   end
 
   def self.completed
@@ -43,6 +56,10 @@ class Match < ActiveRecord::Base
     where(status: 'in progress')
   end
 
+  def self.scheduled_now
+    today.future.where('datetime < ?', Time.now)
+  end
+
   def self.future
     where(status: 'future')
   end
@@ -55,6 +72,10 @@ class Match < ActiveRecord::Base
     home_team_desc = home_team&.country || home_team_tbd
     away_team_desc = away_team&.country || away_team_tbd
     "#{home_team_desc} vs #{away_team_desc}"
+  end
+
+  def completed?
+    status == 'completed'
   end
 
   def home_team_events
@@ -93,6 +114,20 @@ class Match < ActiveRecord::Base
     home_team_score == away_team_score
   end
 
+  private
+
+  def set_default_status
+    self.status ||= 'undetermined'
+  end
+
+  def has_teams
+    home = (home_team.present? || home_team_tbd.present?)
+    away = (away_team.present? || away_team_tbd.present?)
+    return if home && away
+    errors.add(:base, 'Missing home team') unless home
+    errors.add(:base, 'Missing away team') unless away
+  end
+
   def determine_winner
     return unless status == 'completed'
     self.winner = penalty_winner
@@ -102,6 +137,6 @@ class Match < ActiveRecord::Base
   end
 
   def update_teams
-    home_team.save && away_team.save
+    home_team&.save && away_team&.save
   end
 end
